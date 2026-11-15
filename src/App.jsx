@@ -6,10 +6,18 @@ export default function App(){
 const[session,S]=useState(null),[loading,L]=useState(true),[error,E]=useState(''),[notice,N]=useState(''),[mode,M]=useState('login'),[email,Em]=useState(''),[password,P]=useState(''),[name,D]=useState(''),[councils,C]=useState([]),[active,A]=useState(null),[members,B]=useState([]),[tab,T]=useState('overview'),[councilName,CN]=useState(''),[description,Desc]=useState(''),[code,Code]=useState(()=>new URLSearchParams(window.location.search).get('invite')?.trim().toUpperCase().match(/^[A-Z0-9]{6}$/)?.[0]||''),[invite,I]=useState(''),[profile,Profile]=useState(null);
 useEffect(()=>{if(!db){L(false);return}db.auth.getSession().then(({data})=>{S(data.session);L(false)});const{data:{subscription}}=db.auth.onAuthStateChange((_,s)=>S(s));return()=>subscription.unsubscribe()},[]);
 useEffect(()=>{if(session)refresh();else{C([]);A(null)}},[session?.user?.id]);
-useEffect(()=>{if(active)loadMembers(active.id)},[active?.id]);
+useEffect(()=>{
+  let cancelled=false;
+  B([]);
+  if(active)db.rpc('council_roster',{p_council_id:active.id}).then(({data,error})=>{
+    if(cancelled)return;
+    if(error)E(error.message);
+    else B(data??[]);
+  });
+  return ()=>{cancelled=true};
+},[active?.id,session?.user?.id]);
 async function run(fn){E('');N('');try{await fn()}catch(e){E(e.message||String(e))}}
 async function refresh(){const uid=session?.user?.id;if(!uid)return;const[{data:joins,error:je},{data:p}]=await Promise.all([db.from('council_members').select('council_id').eq('user_id',uid),db.from('profiles').select('*').eq('id',uid).maybeSingle()]);if(je){E(je.message);return}Profile(p);const ids=(joins||[]).map(x=>x.council_id);if(!ids.length){C([]);A(null);return}const{data,error}=await db.from('councils').select('*').in('id',ids);if(error){E(error.message);return}C(data||[]);A(old=>(data||[]).find(x=>x.id===old?.id)||(data||[])[0]||null)}
-async function loadMembers(id){const{data,error}=await db.from('council_members').select('user_id,joined_at').eq('council_id',id);if(error){E(error.message);return}const ids=(data||[]).map(x=>x.user_id);let people=[];if(ids.length){const r=await db.from('profiles').select('id,display_name,avatar_url').in('id',ids);people=r.data||[]}B((data||[]).map(m=>({...m,...people.find(p=>p.id===m.user_id)})))}
 async function auth(e){e.preventDefault();await run(async()=>{if(!db)throw Error('Supabase environment variables are not configured.');if(mode==='reset'){const{error}=await db.auth.resetPasswordForEmail(email);if(error)throw error;N('Password reset email sent.');return}if(mode==='signup'){const{error}=await db.auth.signUp({email,password,options:{data:{display_name:name}}});if(error)throw error;N('Account created. Check your email if confirmation is required.');return}const{error}=await db.auth.signInWithPassword({email,password});if(error)throw error})}
 async function createCouncil(e){e.preventDefault();await run(async()=>{const{error}=await db.rpc('create_council',{p_name:councilName.trim(),p_description:description.trim()});if(error)throw error;CN('');Desc('');N('Council created.');await refresh()})}
 async function redeem(e){e.preventDefault();await run(async()=>{const{error}=await db.rpc('redeem_council_invitation',{p_code:code.trim().toUpperCase()});if(error)throw error;const url=new URL(window.location.href);url.searchParams.delete('invite');window.history.replaceState(null,'',url);Code('');N('Invitation redeemed.');await refresh()})}
