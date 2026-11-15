@@ -57,7 +57,7 @@ function ChamberChat({councilId,members}){
     </form>
   </section>;
 }
-function CitationNotebook({councilId}){
+function CitationNotebook({councilId,onFile}){
   const [notes,setNotes]=useState([]);
   const [body,setBody]=useState('');
   const [editing,setEditing]=useState(null);
@@ -117,6 +117,7 @@ function CitationNotebook({councilId}){
       <p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{note.body}</p>
       <button className="ghost" disabled={busy} onClick={()=>{setEditing(note.id);setBody(note.body)}}>Edit</button>
       <button className="ghost" disabled={busy} onClick={()=>{setEditing(null);setBody(note.body)}}>Duplicate</button>
+      <button className="ghost" disabled={busy} onClick={()=>onFile(note)}>Use in citation</button>
       <button className="ghost" disabled={busy} onClick={()=>remove(note.id)}>Delete</button>
     </article>)}
   </section>;
@@ -124,7 +125,7 @@ function CitationNotebook({councilId}){
 const verdictLabels={
   guilty:'Guilty',not_guilty:'Not guilty',bogus_claim:'Bogus claim',dismissed:'Dismissed'
 };
-function CouncilGameplay({councilId,members,userId,tab}){
+function CouncilGameplay({councilId,members,userId,tab,draft,onDraftFiled}){
   const [game,setGame]=useState(null);
   const [error,setError]=useState('');
   const [version,setVersion]=useState(0);
@@ -160,6 +161,7 @@ function CouncilGameplay({councilId,members,userId,tab}){
       const {error}=await db.rpc(rpc,values(new FormData(form)));
       if(error)throw error;
       form.reset();
+      if(rpc==='file_citation_from_draft')onDraftFiled();
       setNotice(success);
       setVersion(current=>current+1);
     }catch(error){setError(error.message)}
@@ -186,7 +188,8 @@ function CouncilGameplay({councilId,members,userId,tab}){
     </>}
     {game&&tab==='citations'&&<>
       <h3>Citations</h3>
-      {filingOpen?<form onSubmit={event=>submit(event,'file_council_citation',form=>({
+      {filingOpen?<form onSubmit={event=>submit(event,draft?'file_citation_from_draft':'file_council_citation',form=>({
+        ...(draft?{p_draft_id:draft.id}:{}),
         p_council_id:councilId,p_accused_id:form.get('accused'),p_incident:form.get('incident').trim(),
         p_proposed_points:Number(form.get('points'))
       }),'Citation filed.')}>
@@ -195,7 +198,7 @@ function CouncilGameplay({councilId,members,userId,tab}){
           {members.filter(person=>person.user_id!==userId).map(person=>
             <option key={person.user_id} value={person.user_id}>{memberName(person.user_id)}</option>)}
         </select></label>
-        <label>Incident<textarea name="incident" required maxLength={4000}/></label>
+        <label>Incident<textarea name="incident" key={draft?.id} defaultValue={draft?.body} required maxLength={4000}/></label>
         <label>Proposed deduction<select name="points">
           {[5,10,15,20,25].map(points=><option key={points} value={points}>{points} points</option>)}
         </select></label>
@@ -227,6 +230,7 @@ function CouncilGameplay({councilId,members,userId,tab}){
   </section>;
 }
 export default function App(){
+const [filingDraft,setFilingDraft]=useState(null);
 const[session,S]=useState(null),[loading,L]=useState(true),[error,E]=useState(''),[notice,N]=useState(''),[mode,M]=useState('login'),[email,Em]=useState(''),[password,P]=useState(''),[name,D]=useState(''),[councils,C]=useState([]),[active,A]=useState(null),[members,B]=useState([]),[tab,T]=useState('overview'),[councilName,CN]=useState(''),[description,Desc]=useState(''),[code,Code]=useState(()=>new URLSearchParams(window.location.search).get('invite')?.trim().toUpperCase().match(/^[A-Z0-9]{6}$/)?.[0]||''),[invite,I]=useState(''),[profile,Profile]=useState(null);
 useEffect(()=>{if(!db){L(false);return}db.auth.getSession().then(({data})=>{S(data.session);L(false)});const{data:{subscription}}=db.auth.onAuthStateChange((_,s)=>S(s));return()=>subscription.unsubscribe()},[]);
 useEffect(()=>{if(session)refresh();else{C([]);A(null)}},[session?.user?.id]);
@@ -251,5 +255,5 @@ const title=<div className="brand">Man<span>U</span>will</div>;
 if(loading)return <main className="center">{title}<p>Opening the Chamber…</p></main>;
 if(!db)return <main className="center">{title}<section className="panel"><h2>Setup required</h2><p>Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Netlify, then redeploy.</p></section></main>;
 if(!session)return <main className="center"><div className="crest">TM</div>{title}<p className="tagline">Every Man Has a Card.<br/>Not Every Man Keeps It.</p><form className="panel auth" onSubmit={auth}><h2>{mode==='signup'?'Join the Brotherhood':mode==='reset'?'Reset password':'Enter the Chamber'}</h2>{mode==='signup'&&<input required placeholder="Display name" value={name} onChange={e=>D(e.target.value)}/>}<input type="email" required placeholder="Email" value={email} onChange={e=>Em(e.target.value)}/>{mode!=='reset'&&<input type="password" minLength="6" required placeholder="Password" value={password} onChange={e=>P(e.target.value)}/>}<button>{mode==='signup'?'Create account':mode==='reset'?'Send reset link':'Sign in'}</button><div className="links"><button type="button" className="link" onClick={()=>M(mode==='signup'?'login':'signup')}>{mode==='signup'?'Already a member? Sign in':'Create account'}</button><button type="button" className="link" onClick={()=>M(mode==='reset'?'login':'reset')}>{mode==='reset'?'Back to login':'Forgot password?'}</button></div></form>{error&&<p className="error">{error}</p>}{notice&&<p className="success">{notice}</p>}</main>;
-return <div className="app"><header><div className="brand small">Man<span>U</span>will</div><button className="ghost" onClick={()=>db.auth.signOut()}>Sign out</button></header><div className="content"><p className="eyebrow">THE BROTHERHOOD</p><h1>Welcome to the Chamber</h1><p className="muted">{profile?.display_name||session.user.email}</p>{error&&<p className="error">{error}</p>}{notice&&<p className="success">{notice}</p>}<div className="stats"><div><strong>{councils.length}</strong><small>My Councils</small></div><div><strong>{active?members.length:'—'}</strong><small>Members</small></div></div><section className="panel"><h2>My Councils</h2>{councils.length?<div className="pills">{councils.map(c=><button key={c.id} className={active?.id===c.id?'selected':'ghost'} onClick={()=>{A(c);T('overview');I('')}}>{c.name}</button>)}</div>:<p className="muted">No Councils yet. Create one or join with an invitation.</p>}</section>{active&&<section className="panel"><p className="eyebrow">COUNCIL CHAMBER</p><h2>{active.name}</h2><p className="muted">{active.description||'Private Council'}</p><div className="tabs">{['overview','members','invitations','chat','notebook','citations'].map(x=><button key={x} className={tab===x?'selected':'ghost'} onClick={()=>T(x)}>{x}</button>)}</div>{(tab==='overview'||tab==='citations')&&<CouncilGameplay key={active.id} councilId={active.id} members={members} userId={session.user.id} tab={tab}/>}{tab==='members'&&<div>{members.map(m=><div className="member" key={m.user_id}><div className="avatar">{(m.display_name||'?')[0].toUpperCase()}</div><div><b>{m.display_name||'Council member'}</b><small>{m.user_id===active.chairman_id?'Chairman':'Member'}</small></div></div>)}</div>}{tab==='notebook'&&<CitationNotebook key={active.id} councilId={active.id}/>} {tab==='chat'&&<ChamberChat key={active.id} councilId={active.id} members={members}/>} {tab==='invitations'&&<>{active.chairman_id===session.user.id?<><p className="muted">Invitations expire after 7 days.</p><button onClick={createInvite}>Generate invitation code</button>{invite&&<div className="invite"><div>{invite}</div><input aria-label="Shareable invitation link" readOnly value={new URL(`?invite=${encodeURIComponent(invite)}`,window.location.origin).href} onFocus={e=>e.target.select()}/></div>}</>:<p>Only the Chairman can generate invitations.</p>}</>}</section>}<div className="columns"><section className="panel"><h2>Start a Council</h2><form onSubmit={createCouncil}><input required maxLength="60" placeholder="Council name" value={councilName} onChange={e=>CN(e.target.value)}/><textarea placeholder="Description (optional)" value={description} onChange={e=>Desc(e.target.value)}/><button>Create Council</button></form></section><section className="panel"><h2>Join a Council</h2><form onSubmit={redeem}><input required maxLength="6" placeholder="6-character invite code" value={code} onChange={e=>Code(e.target.value.toUpperCase())}/><button>Redeem Invitation</button></form></section></div><section className="panel"><h2>My Profile</h2><form onSubmit={updateProfile}><input placeholder="Display name" value={name} onChange={e=>D(e.target.value)}/><button className="secondary">Save display name</button></form></section><footer>ManUwill · Private beta · Built with Purpose</footer></div></div>
+return <div className="app"><header><div className="brand small">Man<span>U</span>will</div><button className="ghost" onClick={()=>db.auth.signOut()}>Sign out</button></header><div className="content"><p className="eyebrow">THE BROTHERHOOD</p><h1>Welcome to the Chamber</h1><p className="muted">{profile?.display_name||session.user.email}</p>{error&&<p className="error">{error}</p>}{notice&&<p className="success">{notice}</p>}<div className="stats"><div><strong>{councils.length}</strong><small>My Councils</small></div><div><strong>{active?members.length:'—'}</strong><small>Members</small></div></div><section className="panel"><h2>My Councils</h2>{councils.length?<div className="pills">{councils.map(c=><button key={c.id} className={active?.id===c.id?'selected':'ghost'} onClick={()=>{A(c);T('overview');I('');setFilingDraft(null)}}>{c.name}</button>)}</div>:<p className="muted">No Councils yet. Create one or join with an invitation.</p>}</section>{active&&<section className="panel"><p className="eyebrow">COUNCIL CHAMBER</p><h2>{active.name}</h2><p className="muted">{active.description||'Private Council'}</p><div className="tabs">{['overview','members','invitations','chat','notebook','citations'].map(x=><button key={x} className={tab===x?'selected':'ghost'} onClick={()=>T(x)}>{x}</button>)}</div>{(tab==='overview'||tab==='citations')&&<CouncilGameplay key={active.id} councilId={active.id} members={members} userId={session.user.id} tab={tab} draft={filingDraft?.councilId===active.id&&filingDraft.userId===session.user.id?filingDraft.note:null} onDraftFiled={()=>setFilingDraft(null)}/>}{tab==='members'&&<div>{members.map(m=><div className="member" key={m.user_id}><div className="avatar">{(m.display_name||'?')[0].toUpperCase()}</div><div><b>{m.display_name||'Council member'}</b><small>{m.user_id===active.chairman_id?'Chairman':'Member'}</small></div></div>)}</div>}{tab==='notebook'&&<CitationNotebook key={active.id} councilId={active.id} onFile={note=>{setFilingDraft({councilId:active.id,userId:session.user.id,note});T('citations')}}/>} {tab==='chat'&&<ChamberChat key={active.id} councilId={active.id} members={members}/>} {tab==='invitations'&&<>{active.chairman_id===session.user.id?<><p className="muted">Invitations expire after 7 days.</p><button onClick={createInvite}>Generate invitation code</button>{invite&&<div className="invite"><div>{invite}</div><input aria-label="Shareable invitation link" readOnly value={new URL(`?invite=${encodeURIComponent(invite)}`,window.location.origin).href} onFocus={e=>e.target.select()}/></div>}</>:<p>Only the Chairman can generate invitations.</p>}</>}</section>}<div className="columns"><section className="panel"><h2>Start a Council</h2><form onSubmit={createCouncil}><input required maxLength="60" placeholder="Council name" value={councilName} onChange={e=>CN(e.target.value)}/><textarea placeholder="Description (optional)" value={description} onChange={e=>Desc(e.target.value)}/><button>Create Council</button></form></section><section className="panel"><h2>Join a Council</h2><form onSubmit={redeem}><input required maxLength="6" placeholder="6-character invite code" value={code} onChange={e=>Code(e.target.value.toUpperCase())}/><button>Redeem Invitation</button></form></section></div><section className="panel"><h2>My Profile</h2><form onSubmit={updateProfile}><input placeholder="Display name" value={name} onChange={e=>D(e.target.value)}/><button className="secondary">Save display name</button></form></section><footer>ManUwill · Private beta · Built with Purpose</footer></div></div>
 }
